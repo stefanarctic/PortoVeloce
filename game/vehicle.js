@@ -28,6 +28,26 @@ export async function loadAventador(scene){
  const steering=new T.Group();steering.position.set(-.377,.777,-.389);body.add(steering);body.updateMatrixWorld(true);
  const steeringParts=[];model.traverse(o=>{if(/^Obj_(Interior_Steering|Steering)/.test(o.name))steeringParts.push(o);});
  for(const part of steeringParts)steering.attach(part);const steeringAxis=new T.Vector3(0,.25,.97).normalize();
+ // Original paddle triangles are split out of Obj_Interior_Plastics in the GLB.
+ const paddles=[-1,1].map(side=>{
+   const part=model.getObjectByName(side<0?'Obj_ShiftPaddle_Left':'Obj_ShiftPaddle_Right');
+   const bounds=new T.Box3().setFromObject(part,true);
+   const pivot=new T.Group();pivot.name=side<0?'Downshift paddle':'Upshift paddle';
+   // The inboard mounting point is the hinge, behind the paddle blade.
+   pivot.position.set(side<0?bounds.max.x:bounds.min.x,(bounds.min.y+bounds.max.y)/2,bounds.min.z+.005);
+   body.add(pivot);pivot.updateMatrixWorld(true);pivot.attach(part);
+   return {pivot,side,time:Infinity};
+ });
+ function animatePaddles(dt){
+   for(const paddle of paddles){
+     paddle.time+=dt;
+     const t=paddle.time;
+     // Fast pull, a short mechanical stop, then a slower spring return.
+     const pull=t<.045?Math.sin(t/.045*Math.PI/2):t<.09?1:
+       t<.24?.5+.5*Math.cos((t-.09)/.15*Math.PI):0;
+     paddle.pivot.rotation.y=-paddle.side*.32*pull;
+   }
+ }
  const displayCanvas=document.createElement('canvas');displayCanvas.width=512;displayCanvas.height=192;
  const dc=displayCanvas.getContext('2d'),displayTex=new T.CanvasTexture(displayCanvas);displayTex.colorSpace=T.SRGBColorSpace;
  const display=new T.Mesh(new T.PlaneGeometry(.304,.113),new T.MeshBasicMaterial({map:displayTex,toneMapped:false}));
@@ -59,7 +79,9 @@ export async function loadAventador(scene){
  const shadow=document.createElement('canvas');shadow.width=shadow.height=128;const g=shadow.getContext('2d');const grad=g.createRadialGradient(64,64,5,64,64,63);grad.addColorStop(0,'rgba(10,15,15,.78)');grad.addColorStop(.43,'rgba(10,15,15,.63)');grad.addColorStop(1,'rgba(10,15,15,0)');g.fillStyle=grad;g.fillRect(0,0,128,128);
  const blob=new T.Mesh(new T.PlaneGeometry(3.3,6.15),new T.MeshBasicMaterial({map:new T.CanvasTexture(shadow),transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2}));blob.rotation.x=-Math.PI/2;blob.position.y=.027;root.add(blob);
  const axisY=new T.Vector3(0,1,0),axisZ=new T.Vector3(0,0,1),q=new T.Quaternion();
- return {root,update(car,dt){deform(car.damage);dashboard(car);steering.quaternion.setFromAxisAngle(steeringAxis,-car.steer*12);root.position.set(car.x,.015,car.z);root.rotation.y=-car.heading;suspension.rotation.x=car.pitch;suspension.rotation.z=car.roll;
+ return {root,pullPaddle(direction){
+    const paddle=paddles[direction>0?1:0];paddle.time=0;
+ },update(car,dt){animatePaddles(dt);deform(car.damage);dashboard(car);steering.quaternion.setFromAxisAngle(steeringAxis,-car.steer*12);root.position.set(car.x,.015,car.z);root.rotation.y=-car.heading;suspension.rotation.x=car.pitch;suspension.rotation.z=car.roll;
     angle=(angle+car.forward*dt/.355)%(2*Math.PI);
     for(const [wheel,base,side]of rotors)wheel.quaternion.copy(base).multiply(q.setFromAxisAngle(axisZ,angle*side));
     for(const [hub,base]of hubs)hub.quaternion.copy(q.setFromAxisAngle(axisY,-car.steer)).multiply(base);

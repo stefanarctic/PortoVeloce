@@ -48,7 +48,7 @@ async function boot(){
  function closeHelp(){show('help',false);state=active?'pause':'menu';if(active)show('pause',true);}
  function recover(){if(mode==='sprint'){begin();toast('Sprint restarted');return;}let x=roadsX.reduce((a,b)=>Math.abs(b-car.x)<Math.abs(a-car.x)?b:a),z=clamp(car.z,-349,349);let saved=car.travel;const point=recovery(car.x,car.z);if(point)car.reset(point.x,point.z,point.heading);else car.reset(x+4,z);car.travel=saved;cameraReady=false;toast('Vehicle recovered and repaired');}
  function changeCam(){cam=(cam+1)%3;cameraReady=false;toast(['Chase camera','Driver camera','Bumper camera'][cam]);}
- function shift(n){if(!car.shift(n))return;if(car.auto&&n>0){car.auto=false;save('auto','0');transLabel();}}
+ function shift(n,paddle=0){if(paddle)vehicle.pullPaddle(paddle);if(!car.shift(n))return;if(car.auto&&n>0){car.auto=false;save('auto','0');transLabel();}}
  $('free').onclick=()=>setMode('free');$('highway').onclick=()=>setMode('highway');$('sprint').onclick=()=>setMode('sprint');$('start').onclick=begin;$('resume').onclick=resume;$('again').onclick=begin;$('toMenu').onclick=home;
  $('helpHome').onclick=$('helpPause').onclick=openHelp;$('closeHelp').onclick=closeHelp;$('soundHome').onclick=$('soundPause').onclick=toggleSound;$('gearMode').onclick=toggleTransmission;
  function fullscreen(){if(window.chrome?.webview)window.chrome.webview.postMessage('fullscreen');else if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen().catch(()=>{});}
@@ -56,10 +56,10 @@ async function boot(){
    if(e.repeat)return;if(e.code==='F11'){fullscreen();return;}if(e.code==='Escape'){if(state.startsWith('help'))closeHelp();else if(state==='drive')pause();else if(state==='pause'&&!finished)resume();return;}
    if(e.code==='KeyH'){if(state.startsWith('help'))closeHelp();else openHelp();return;}
    if(state!=='drive')return;keys.add(e.code);
-   switch(e.code){case 'KeyX':shift(Math.min(7,car.gear+1));break;case 'KeyZ':shift(Math.max(-1,car.gear-1));break;case 'KeyB':shift(-1);break;case 'KeyN':shift(0);break;case 'KeyM':toggleTransmission();break;case 'KeyC':changeCam();break;case 'KeyR':recover();break;}
+   switch(e.code){case 'KeyX':shift(Math.min(7,car.gear+1),1);break;case 'KeyZ':shift(Math.max(-1,car.gear-1),-1);break;case 'KeyB':shift(-1);break;case 'KeyN':shift(0);break;case 'KeyM':toggleTransmission();break;case 'KeyC':changeCam();break;case 'KeyR':recover();break;}
  });addEventListener('keyup',e=>keys.delete(e.code));addEventListener('blur',()=>{keys.clear();if(state==='drive')pause();});document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='drive')pause();});
  let oldPad=[];function controls(){const p=Array.from(navigator.getGamepads?.()||[]).find(Boolean);const val=i=>p?.buttons[i]?.value||0;
-   const btn=p?Array.from(p.buttons,b=>b.pressed):[];const edge=i=>btn[i]&&!oldPad[i];if(state==='drive'){if(edge(5))shift(Math.min(7,car.gear+1));if(edge(4))shift(Math.max(-1,car.gear-1));if(edge(3))changeCam();if(edge(9))pause();}else if(state==='pause'&&!finished&&edge(9))resume();oldPad=btn;
+   const btn=p?Array.from(p.buttons,b=>b.pressed):[];const edge=i=>btn[i]&&!oldPad[i];if(state==='drive'){if(edge(5))shift(Math.min(7,car.gear+1),1);if(edge(4))shift(Math.max(-1,car.gear-1),-1);if(edge(3))changeCam();if(edge(9))pause();}else if(state==='pause'&&!finished&&edge(9))resume();oldPad=btn;
    let steer=p?.axes[0]||0;if(Math.abs(steer)<.09)steer=0;
    input.gas=Math.max(val(7),+(keys.has('KeyW')||keys.has('ArrowUp')));input.brake=Math.max(val(6),+(keys.has('KeyS')||keys.has('ArrowDown')));
    input.turn=clamp(steer + +(keys.has('KeyD')||keys.has('ArrowRight')) - +(keys.has('KeyA')||keys.has('ArrowLeft')),-1,1);
