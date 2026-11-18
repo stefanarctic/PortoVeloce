@@ -1,4 +1,5 @@
 import * as T from 'three';
+import {body,drift} from './collisions.js';
 import {main as motorway,lane} from './highway-layout.js';
 import {GLTFLoader} from './vendor/GLTFLoader.js';
 export async function loadAventador(scene){
@@ -82,6 +83,8 @@ export function traffic(scene){
  const circuit=motorway.length+740;
  for(let i=0;i<32;i++){const direction=i%2===0?1:-1,outer=i%4<2,targetSpeed=outer?22:29;
    cars.push({motorway:true,direction,outer,progress:(i+.37)*circuit/32,speed:targetSpeed,targetSpeed,x:0,z:0,yaw:0});}
+ for(const c of cars){const speed=c.speed;Object.assign(c,body(c.x,c.z,.87,2.05,1450,-c.yaw));c.speed=speed??0;}
+ const initial=cars.map(c=>({...c}));
  const highwayCars=cars.filter(c=>c.motorway);
  const meshParts=[],dummy=new T.Object3D(),local=new T.Object3D(),matrix=new T.Matrix4();
  const cube=new T.BoxGeometry(1,1,1), wheel=new T.CylinderGeometry(.315,.315,.19,12);wheel.rotateZ(Math.PI/2);
@@ -92,7 +95,10 @@ export function traffic(scene){
  part(cube,material(0xffffff,.36),0,1.41,.08,1.26,.07,1.08,true);
  for(let x of [-.82,.82])for(let z of [-1.28,1.26])part(wheel,material(0x25292a),x,.33,z);
  for(let x of [-.59,.59]){part(cube,material(0xf1e6c7),x,.65,-2.01,.31,.12,.05);part(cube,material(0xc44337),x,.67,2.055,.34,.12,.045);}
- function update(dt,player){for(let i=0;i<cars.length;i++){const c=cars[i];if(c.motorway){
+ function update(dt,player){for(let i=0;i<cars.length;i++){const c=cars[i];
+   if(c.crashed){drift(c,dt);c.yaw=-c.heading;continue;}
+   const oldX=c.x,oldZ=c.z;
+   if(c.motorway){
      const dx=player.x-c.x,dz=player.z-c.z,fx=-Math.sin(c.yaw),fz=-Math.cos(c.yaw);
      const forward=dx*fx+dz*fz,lateral=Math.abs(dx*fz-dz*fx);
      const inTown=c.progress>=motorway.length;
@@ -101,7 +107,7 @@ export function traffic(scene){
      // Opposing traffic occupies a separate carriageway. Both same-direction lanes meet on Lungomare.
      const narrows=inTown||c.progress<230||c.progress>motorway.length-230;
      for(const leader of highwayCars){
-       if(leader===c||leader.direction!==c.direction||(!narrows&&leader.outer!==c.outer))continue;
+       if(leader.crashed||leader===c||leader.direction!==c.direction||(!narrows&&leader.outer!==c.outer))continue;
        const gap=((leader.progress-c.progress)*c.direction+circuit)%circuit;
        if(gap<55)target=Math.min(target,Math.max(0,leader.speed+(gap-6-c.speed*.75)*.65));
      }
@@ -115,7 +121,17 @@ export function traffic(scene){
    if(c.wait>0)c.wait=Math.max(0,c.wait-dt);else if(!mustYield)c.progress+=dt*c.speed/len;
    if(c.progress>=1){c.seg=(c.seg+1)%c.p.length;c.progress=0;c.wait=.45;a=b;b=c.p[(c.seg+1)%c.p.length];}
    c.x=T.MathUtils.lerp(a[0],b[0],c.progress);c.z=T.MathUtils.lerp(a[1],b[1],c.progress);c.yaw=Math.atan2(-(b[0]-a[0]),-(b[1]-a[1]));}
+   c.heading=-c.yaw;
+   if(dt>0){c.vx=(c.x-oldX)/dt;c.vz=(c.z-oldZ)/dt;}
+   }
+ }
+ function render(){for(let i=0;i<cars.length;i++){const c=cars[i];
+   c.yaw=-c.heading;
+   dummy.scale.set(1-.12*Math.max(c.damage[2],c.damage[3]),1,1-.18*Math.max(c.damage[0],c.damage[1]));
    dummy.position.set(c.x,0,c.z);dummy.rotation.y=c.yaw;dummy.updateMatrix();for(const [m,l]of meshParts)m.setMatrixAt(i,matrix.multiplyMatrices(dummy.matrix,l));}
   for(const [m]of meshParts)m.instanceMatrix.needsUpdate=true;}
- return {cars,update};
+ return {cars,update,render,reset(player){
+   cars.forEach((c,i)=>Object.assign(c,initial[i],{damage:[0,0,0,0],crashed:false}));
+   update(0,player);render();
+ }};
 }

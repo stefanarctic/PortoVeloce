@@ -2,6 +2,7 @@ import * as T from 'three';
 import {RGBELoader} from './vendor/RGBELoader.js';
 import {main as motorway,network,locate,lane,recovery} from './highway-layout.js';
 import {Car,clamp} from './physics.js';
+import {collide} from './collisions.js';
 import {createCity,offRoad,roadsX,roadsZ,route} from './city.js';
 import {loadAventador,traffic} from './vehicle.js';
 const $=id=>document.getElementById(id),show=(id,on)=>$(id).hidden=!on;
@@ -39,7 +40,7 @@ async function boot(){
  function setMode(m){mode=m;for(let [id,k]of [['free','free'],['highway','highway'],['sprint','sprint']]){$(id).classList.toggle('selected',k===m);$(id).setAttribute('aria-pressed',String(k===m));}
    $('start').firstElementChild.textContent=m==='sprint'?'Start harbor sprint':m==='highway'?'Drive the A1':'Start engine';}
  function placeGate(){gate.visible=mode==='sprint'&&active&&!finished;if(!gate.visible)return;const [x,z]=route[gateIndex],prev=gateIndex?route[gateIndex-1]:[4,82];gate.position.set(x,.02,z);gate.rotation.y=Math.atan2(x-prev[0],z-prev[1]);}
- function begin(){if(mode==='highway'){const p=lane(motorway,235);car.reset(p.x,p.z,p.heading);}else car.reset();gateIndex=0;elapsed=0;finished=false;active=true;cameraReady=false;finishMessage='';keys.clear();$('notice').textContent='';stepTime=0;resume();placeGate();toast(mode==='sprint'?'Harbor sprint · Follow the lime gates':mode==='highway'?'A1 · Tangenziale costiera':car.auto?'Automatic · W to accelerate':'W to accelerate · X to shift up');}
+ function begin(){if(mode==='highway'){const p=lane(motorway,235);car.reset(p.x,p.z,p.heading);}else car.reset();ai.reset(car);city.resetProps();gateIndex=0;elapsed=0;finished=false;active=true;cameraReady=false;finishMessage='';keys.clear();$('notice').textContent='';stepTime=0;resume();placeGate();toast(mode==='sprint'?'Harbor sprint · Follow the lime gates':mode==='highway'?'A1 · Tangenziale costiera':car.auto?'Automatic · W to accelerate':'W to accelerate · X to shift up');}
  function resume(){state='drive';keys.clear();acc=0;last=performance.now();show('menu',false);show('pause',false);show('help',false);show('hud',true);show('race',mode==='sprint');transLabel();wakeAudio();}
  function pause(done=false){if(state!=='drive'&&!done)return;state='pause';keys.clear();show('pause',true);show('hud',false);$('pauseTitle').textContent=done?'Sprint complete':'Paused';$('result').textContent=done?finishMessage:'';show('resume',!done);$('again').textContent=mode==='sprint'?'Restart sprint':'Restart drive';audioUpdate();}
  function home(){state='menu';active=false;keys.clear();car.reset();gate.visible=false;show('menu',true);show('pause',false);show('hud',false);show('help',false);audioUpdate();}
@@ -63,9 +64,25 @@ async function boot(){
    input.gas=Math.max(val(7),+(keys.has('KeyW')||keys.has('ArrowUp')));input.brake=Math.max(val(6),+(keys.has('KeyS')||keys.has('ArrowDown')));
    input.turn=clamp(steer + +(keys.has('KeyD')||keys.has('ArrowRight')) - +(keys.has('KeyA')||keys.has('ArrowLeft')),-1,1);
    input.clutch=keys.has('ShiftLeft')||keys.has('ShiftRight');input.handbrake=keys.has('Space')||!!btn[0];}
- function step(dt){ai.update(dt,car);car.step(dt,input,offRoad(car.x,car.z));
-   for(const b of city.nearby(car.x,car.z))car.collide(b);
-   for(const t of ai.cars){if(Math.abs(car.x-t.x)>5||Math.abs(car.z-t.z)>5)continue;const cs=Math.cos(t.yaw),sn=Math.sin(t.yaw);car.collide({x:t.x,z:t.z,w:.85,d:2,cs,sn,bx:.85*Math.abs(cs)+2*Math.abs(sn),bz:.85*Math.abs(sn)+2*Math.abs(cs)});}
+ function step(dt){
+   // Substeps limit travel to less than a thin roadside obstacle at highway speed.
+   const bodies=[car,...ai.cars,...city.props];
+   const fastest=bodies.reduce((speed,b)=>Math.max(speed,Math.hypot(b.vx,b.vz)+Math.abs(b.yawRate)*b.d),0);
+   const substeps=Math.max(2,Math.ceil(fastest*dt/.18)),slice=dt/substeps;
+   for(let sub=0;sub<substeps;sub++){
+     ai.update(slice,car);city.stepProps(slice);car.step(slice,input,offRoad(car.x,car.z));
+     for(let iteration=0;iteration<3;iteration++){
+       for(const b of bodies){
+         if(b!==car&&!b.crashed)continue;
+         for(const obstacle of city.nearby(b.x,b.z))collide(b,obstacle);
+       }
+       for(let i=0;i<bodies.length;i++)for(let j=i+1;j<bodies.length;j++){
+         if(bodies[i]!==car&&!bodies[i].crashed&&!bodies[j].crashed)continue;
+         collide(bodies[i],bodies[j]);
+       }
+     }
+   }
+   ai.render();city.renderProps();
    if(mode==='sprint'&&!finished){elapsed+=dt;let cp=route[gateIndex];
      if(Math.hypot(cp[0]-car.x,cp[1]-car.z)<5.4){if(++gateIndex===route.length){finished=true;gate.visible=false;const best=Number(stored('best','0'));if(best===0||elapsed<best)save('best',String(elapsed));
        finishMessage='Time '+clockText(elapsed)+' · Personal best '+clockText(Math.min(best||elapsed,elapsed));pause(true);}
@@ -108,9 +125,9 @@ async function boot(){
    $('street').textContent=where?(where.road===motorway?'Tangenziale costiera':where.road.id==='Centro'?'Raccordo Ovest':where.road.id==='Entry'?'Ingresso A1':'Uscita Ovest'):car.x>-30?'Lungomare':car.x<-290?'Centro Direzionale':'Città Vecchia';if(mode==='sprint'){$('raceTime').textContent=clockText(elapsed);$('gateText').textContent='Gate '+Math.min(gateIndex+1,route.length)+' / '+route.length;}
    if(performance.now()>noticeUntil)$('notice').textContent='';mini(where);}
  function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();}addEventListener('resize',resize);resize();
- $('start').disabled=false;setMode('free');soundLabel();transLabel();ai.update(0,car);vehicle.update(car,0);
+ $('start').disabled=false;setMode('free');soundLabel();transLabel();ai.update(0,car);ai.render();vehicle.update(car,0);
  function frame(now){const dt=Math.min(.10,Math.max(0,(now-last)/1000));last=now;clock+=dt;controls();if(state==='drive'){acc+=dt;while(acc>=1/120&&state==='drive'){step(1/120);acc-=1/120;}stepTime+=dt;vehicle.update(car,dt);}
-   else if(state==='menu'||state==='helpHome'){menuTime+=dt;ai.update(dt,car);vehicle.update(car,0);}
+   else if(state==='menu'||state==='helpHome'){menuTime+=dt;ai.render();vehicle.update(car,0);}
    if(state==='drive'||state==='menu'||state==='helpHome'||frameLast===0){cameraPose(dt);
      sun.target.position.set(car.x,0,car.z);sun.position.set(car.x+74,46,car.z-60);
      if(clock-lastWater>.14){city.update(clock);lastWater=clock;}renderer.render(scene,camera);}

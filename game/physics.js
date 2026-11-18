@@ -1,3 +1,4 @@
+import {collide} from './collisions.js';
 export const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
 export const ratios=[0,3.909,2.438,1.81,1.458,1.185,.967,.844];
 const finalDrive=3.43, radius=.355, mass=1690, torqueCurve=[[800,236],[2000,380],[3500,535],[5500,690],[7000,650],[8250,596],[8600,440]];
@@ -9,10 +10,10 @@ function torque(rpm){
   return 410;
 }
 export class Car {
-  constructor(){this.auto=false;this.reset();}
+  constructor(){this.mass=mass;this.w=.98;this.d=2.34;this.inertia=2650;this.auto=false;this.reset();}
   reset(x=4,z=82,heading=0){
     Object.assign(this,{x,z,heading,vx:0,vz:0,yawRate:0,steer:0,rpm:900,gear:1,cut:0,blip:0,integrity:1,damage:[0,0,0,0],throttle:0,brake:0,speed:0,forward:0,travel:0,slip:0,ax:0,ay:0,roll:0,pitch:0,impact:0,shiftCount:0,blocked:false});
-    this.shiftDuration=0;this.shiftStartRpm=900;this.engagement=1;
+    this.crashed=false;this.shiftDuration=0;this.shiftStartRpm=900;this.engagement=1;
   }
   shift(next){
     if(!Number.isInteger(next)||next===this.gear||next < -1||next>7)return false;
@@ -83,7 +84,7 @@ export class Car {
     const lowSpeedYaw=u*Math.tan(this.steer)/wheelbase;
     this.yawRate+=(lowSpeedYaw-this.yawRate)*(1-dynamic)*(1-Math.exp(-dt*13));
     // An electronic stability assist damps excess yaw after the tires saturate or the driver unwinds the wheel.
-    if(!input.handbrake){
+    if(!input.handbrake&&this.impact<.1){
       const maxYaw=lateralLimit/Math.max(absU,3);
       const reference=clamp(u*Math.tan(this.steer)/(wheelbase+.0035*u*u),-maxYaw,maxYaw);
       const allowed=clamp(this.yawRate,Math.min(0,reference)-.025,Math.max(0,reference)+.025);
@@ -98,26 +99,5 @@ export class Car {
     this.roll+=(this.ay*.004-this.roll)*(1-Math.exp(-dt*7));
     this.slip=clamp((Math.max(Math.abs(fSlip),Math.abs(rSlip))-.075)*3.3,0,1)*clamp(absU/7,0,1);
   }
-  // Car-oriented rectangle against world-aligned scenery using four separating axes.
-  collide(box){
-    const dx=this.x-box.x,dz=this.z-box.z;
-    const cs=box.cs??1,sn=box.sn??0;
-    if(Math.abs(dx)>(box.bx??box.w)+3||Math.abs(dz)>(box.bz??box.d)+3)return 0;
-    const s=Math.sin(this.heading),c=Math.cos(this.heading),halfW=.98,halfL=2.34;
-    let penetration=Infinity,nx=0,nz=0;
-    for(const [ax,az] of [[cs,-sn],[sn,cs],[c,s],[s,-c]]){
-      const delta=dx*ax+dz*az;
-      const reach=halfW*Math.abs(c*ax+s*az)+halfL*Math.abs(s*ax-c*az)+box.w*Math.abs(cs*ax-sn*az)+box.d*Math.abs(sn*ax+cs*az);
-      const overlap=reach-Math.abs(delta);if(overlap<=0)return 0;
-      if(overlap<penetration){penetration=overlap;const sign=delta>=0?1:-1;nx=ax*sign;nz=az*sign;}
-    }
-    this.x+=nx*(penetration+.002);this.z+=nz*(penetration+.002);
-    const inward=-(this.vx*nx+this.vz*nz);if(inward<=0)return 0;
-    this.vx+=1.14*inward*nx;this.vz+=1.14*inward*nz;this.yawRate*=.35;
-    if(inward>2.5){const longitudinal=nx*s-nz*c,lateral=nx*c+nz*s;
-      const panel=Math.abs(longitudinal)>Math.abs(lateral)?(longitudinal<0?0:1):(lateral<0?3:2);
-      this.damage[panel]=clamp(this.damage[panel]+(inward-2.5)*.027,0,1);
-      this.integrity=Math.max(.12,this.integrity-(inward-2.5)*.018);this.impact=Math.min(1,inward/20);}
-    return inward;
-  }
+  collide(box){return collide(this,box);}
 }

@@ -1,4 +1,5 @@
 import * as T from 'three';
+import {body,drift} from './collisions.js';
 import {buildHighway} from './highway.js';
 import {locate} from './highway-layout.js';
 export const roadsX=[-540,-450,-360,-270,-180,-90,0],roadsZ=[-360,-270,-180,-90,0,90,180,270,360];
@@ -13,7 +14,7 @@ let seed=71292;function rand(){seed=(Math.imul(seed,1664525)+1013904223)>>>0;ret
 function texture(w,h,paint){const c=document.createElement('canvas');c.width=w;c.height=h;paint(c.getContext('2d'));const tx=new T.CanvasTexture(c);tx.colorSpace=T.SRGBColorSpace;tx.anisotropy=8;return tx;}
 const mat=(color,roughness=.8,metalness=0)=>new T.MeshStandardMaterial({color,roughness,metalness});
 export function createCity(scene,renderer){
- seed=71292;const solids=[],batches=new Map(),cube=new T.BoxGeometry(1,1,1),cylinder=new T.CylinderGeometry(.5,.5,1,12),ball=new T.IcosahedronGeometry(.5,1);
+ seed=71292;const props=[];const solids=[],batches=new Map(),cube=new T.BoxGeometry(1,1,1),cylinder=new T.CylinderGeometry(.5,.5,1,12),ball=new T.IcosahedronGeometry(.5,1);
  const tmp=new T.Object3D(),col=new T.Color();
  function place(geo,m,x,y,z,w,h,d,rx=0,ry=0,rz=0,color=0xffffff){
    let by=batches.get(geo);if(!by)batches.set(geo,by=new Map());let bucket=by.get(m);if(!bucket)by.set(m,bucket=[]);
@@ -89,7 +90,11 @@ export function createCity(scene,renderer){
  for(const z of roadsZ)for(let i=0;i<roadsX.length-1;i++){const mid=roadsX[i]+45;for(let xx=-30;xx<=30;xx+=12)block(white,mid+xx,.014,z,4,.022,.125);
    for(let side of [-1,1])block(white,mid,.014,z+side*7.4,67,.022,.1);}
  block(promenade,18,.09,0,19,.18,757);block(trim,27,.68,0,.6,1.16,758);solid(27,0,.66,760);
- for(let j=-3;j<4;j++){pine(22,j*90+49,.78);pine(21,j*90+70,.67);}for(let z=-360;z<=360;z+=18){pole(iron,26.4,.9,z,.18,1.6,.18);block(iron,26.4,1.58,z+9,.08,.07,18);if(z%36===0){block(wood,20,.63,z,1.05,.14,2.9);block(iron,20,.3,z,.65,.54,2.3);}}
+ for(let j=-3;j<4;j++){pine(22,j*90+49,.78);pine(21,j*90+70,.67);}for(let z=-360;z<=360;z+=18){pole(iron,26.4,.9,z,.18,1.6,.18);block(iron,26.4,1.58,z+9,.08,.07,18);if(z%36===0){const root=new T.Group();scene.add(root);
+ const seat=new T.Mesh(new T.BoxGeometry(1.05,.14,2.9),wood);seat.position.y=.63;root.add(seat);
+ const base=new T.Mesh(new T.BoxGeometry(.65,.54,2.3),iron);base.position.y=.3;root.add(base);
+ seat.castShadow=base.castShadow=true;
+ props.push(Object.assign(body(20,z,.525,1.45,90),{root,spawnX:20,spawnZ:z}));root.position.set(20,0,z);}}
  // Raised outer seawalls form a visible boundary around the drivable district.
  for(const sign of [-1,1]){
    for(const [left,right] of [[-553,-9.6],[9.6,27]]){const x=(left+right)/2;block(stone,x,.9,sign*378,right-left,1.8,.85);solid(x,sign*378,right-left,.85);}
@@ -109,6 +114,10 @@ export function createCity(scene,renderer){
    inst.castShadow=true;inst.receiveShadow=true;inst.computeBoundingSphere();scene.add(inst);}
  const grid=new Map();
  for(const box of solids){for(let x=Math.floor((box.x-box.bx)/32);x<=Math.floor((box.x+box.bx)/32);x++)for(let z=Math.floor((box.z-box.bz)/32);z<=Math.floor((box.z+box.bz)/32);z++){let key=x+','+z;if(!grid.has(key))grid.set(key,[]);grid.get(key).push(box);}}
- return {solids,water,nearby(x,z){let result=new Set();for(let i=Math.floor((x-3)/32);i<=Math.floor((x+3)/32);i++)for(let j=Math.floor((z-3)/32);j<=Math.floor((z+3)/32);j++)for(const b of grid.get(i+','+j)||[])result.add(b);return result;},
+ return {solids,water,props,
+ resetProps(){for(const p of props)Object.assign(p,body(p.spawnX,p.spawnZ,.525,1.45,90),{crashed:false});this.renderProps();},
+ stepProps(dt){for(const p of props)if(p.crashed)drift(p,dt,.48);},
+ renderProps(){for(const p of props){p.root.position.set(p.x,0,p.z);p.root.rotation.y=-p.heading;}},
+ nearby(x,z){let result=new Set();for(let i=Math.floor((x-3)/32);i<=Math.floor((x+3)/32);i++)for(let j=Math.floor((z-3)/32);j<=Math.floor((z+3)/32);j++)for(const b of grid.get(i+','+j)||[])result.add(b);return result;},
  update(time){const v=waterGeo.attributes.position;for(let i=0;i<v.count;i++){const x=v.getX(i),z=v.getZ(i);v.setY(i,.085*Math.sin(x*.21+z*.065+time*1.23)+.065*Math.sin(z*.21-time*.86));}v.needsUpdate=true;waterGeo.computeVertexNormals();}};
 }
