@@ -12,13 +12,17 @@ export class Car {
   constructor(){this.auto=false;this.reset();}
   reset(x=4,z=82,heading=0){
     Object.assign(this,{x,z,heading,vx:0,vz:0,yawRate:0,steer:0,rpm:900,gear:1,cut:0,blip:0,integrity:1,damage:[0,0,0,0],throttle:0,brake:0,speed:0,forward:0,travel:0,slip:0,ax:0,ay:0,roll:0,pitch:0,impact:0,shiftCount:0,blocked:false});
+    this.shiftDuration=0;this.shiftStartRpm=900;this.engagement=1;
   }
   shift(next){
     if(!Number.isInteger(next)||next===this.gear||next < -1||next>7)return false;
     if(this.cut>0 && next>0 && this.gear>0)return false;
     if(next>0 && Math.max(this.forward,0)*ratios[next]*finalDrive*60/(2*Math.PI*radius)>8650)return false;
-    this.blip=next>0&&next<this.gear?.19:0;
-    this.gear=next;this.cut=.125;this.shiftCount++;return true;
+    const downshift=next>0&&next<this.gear;
+    this.shiftDuration=next>0&&this.gear>0?(downshift?.38:.32):.125;
+    this.shiftStartRpm=this.rpm;
+    this.blip=downshift?this.shiftDuration:0;
+    this.gear=next;this.cut=this.shiftDuration;this.shiftCount++;return true;
   }
   step(dt,input,offroad=false){
     const sin=Math.sin(this.heading),cos=Math.cos(this.heading);
@@ -33,15 +37,24 @@ export class Car {
     const drivenSpeed=Math.max(0,u*Math.sign(ratio));
     const wheelRpm=drivenSpeed*Math.abs(ratio)*finalDrive*60/(2*Math.PI*radius);
     const uncoupled=!ratio||input.clutch||this.cut>0;
-    const target=this.cut>0&&ratio&&!input.clutch?Math.max(900,wheelRpm):uncoupled?(this.blip>0?Math.max(this.rpm,wheelRpm):900+this.throttle*7710):Math.max(900+this.throttle*1750,wheelRpm);
-    this.rpm+=clamp(target-this.rpm,-dt*13500,dt*(uncoupled?6400:17000));
+    const target=uncoupled?900+this.throttle*7710:Math.max(900+this.throttle*1750,wheelRpm);
+    if(this.cut>0&&ratio&&!input.clutch){
+      // Brief actuator delay, then an eased rev match through the open clutch.
+      const progress=clamp((this.shiftDuration-this.cut-.055)/(this.shiftDuration-.055),0,1);
+      const blend=progress*progress*(3-2*progress);
+      const matchedRpm=Math.max(900+this.throttle*1750,wheelRpm);
+      this.rpm=this.shiftStartRpm+(matchedRpm-this.shiftStartRpm)*blend;
+    }else{
+      this.rpm+=clamp(target-this.rpm,-dt*13500,dt*(uncoupled?6400:17000));
+    }
+    this.engagement+=(Number(!uncoupled)-this.engagement)*(1-Math.exp(-dt*25));
     this.rpm=clamp(this.rpm,850,8650);
     if(this.auto&&!input.clutch&&this.gear>0&&this.cut===0){
       if(wheelRpm>(this.throttle>.55?8150:4700)&&this.gear<7)this.shift(this.gear+1);
       else if(wheelRpm<2600&&this.gear>1)this.shift(this.gear-1);
     }
     const coupled=!uncoupled&&this.cut===0;
-    let drive=coupled&&wheelRpm<8520?this.throttle*torque(this.rpm)*ratio*finalDrive*.91/radius*(.6+.4*this.integrity):0;
+    let drive=coupled&&wheelRpm<8520?this.throttle*torque(this.rpm)*ratio*finalDrive*.91/radius*(.6+.4*this.integrity)*this.engagement:0;
     const drag=.5*1.225*.68*u*absU;
     // Resolve brake and rolling forces against current motion, including the near-stop case.
     const rolling=mass*9.81*(offroad?.035:.014), engineBrake=coupled?Math.min(1400,Math.abs(ratio)*this.rpm*.043)*(1-this.throttle):0;

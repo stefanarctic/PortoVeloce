@@ -35,7 +35,7 @@ async function boot(){
    if(!enginePromise)enginePromise=context.audioWorklet.addModule('engine.js').then(()=>{engine=new AudioWorkletNode(context,'v12-exhaust',{numberOfInputs:0,outputChannelCount:[2]});engine.connect(context.destination);});
    await enginePromise;audioUpdate();
  }catch(e){toast('Audio unavailable · '+e.message);}}
- function audioUpdate(){engine?.port.postMessage({rpm:car.rpm,load:car.throttle,slip:car.slip,speed:car.speed,cut:car.cut>0,volume:state==='drive'&&!muted?.76:0});}
+ function audioUpdate(){engine?.port.postMessage({rpm:car.rpm,load:Math.max(car.throttle,car.blip>0?.65:0),slip:car.slip,speed:car.speed,cut:car.cut>0,shiftGain:car.cut>0?(car.blip>0?.7:.21):1,volume:state==='drive'&&!muted?.76:0});}
  function setMode(m){mode=m;for(let [id,k]of [['free','free'],['highway','highway'],['sprint','sprint']]){$(id).classList.toggle('selected',k===m);$(id).setAttribute('aria-pressed',String(k===m));}
    $('start').firstElementChild.textContent=m==='sprint'?'Start harbor sprint':m==='highway'?'Drive the A1':'Start engine';}
  function placeGate(){gate.visible=mode==='sprint'&&active&&!finished;if(!gate.visible)return;const [x,z]=route[gateIndex],prev=gateIndex?route[gateIndex-1]:[4,82];gate.position.set(x,.02,z);gate.rotation.y=Math.atan2(x-prev[0],z-prev[1]);}

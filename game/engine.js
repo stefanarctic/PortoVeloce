@@ -23,11 +23,13 @@ class Exhaust extends AudioWorkletProcessor{
     this.delay=new Float32Array(Math.max(2,Math.round(sampleRate*.0048)));this.di=0;
     this.kicks=kickPitchHz.map(makeKick);
     this.lastSlot=-1;
+    this.shiftGain=1;
   }
   process(_,outputs){const channels=outputs[0];if(!channels.length)return true;
     const t=this.target, dt=1/sampleRate;if(t.cut&&!this.lastCut&&this.load>.35)this.bang=.52;this.lastCut=t.cut;
     for(let i=0;i<channels[0].length;i++){
       this.rpm+=(t.rpm-this.rpm)*Math.min(1,dt*48);this.load+=(t.load-this.load)*dt*25;
+      this.shiftGain+=((t.shiftGain??(t.cut?.21:1))-this.shiftGain)*(1-Math.exp(-dt*35));
       this.seed=(Math.imul(this.seed,1664525)+1013904223)|0;const noise=this.seed/2147483648;this.slow+=.035*(noise-this.slow);
       this.phase+=this.rpm*.1*dt*(1+this.slow*.006);if(this.phase>=12)this.phase-=12;
       const slot=Math.floor(this.phase), frac=this.phase-slot;
@@ -37,7 +39,7 @@ class Exhaust extends AudioWorkletProcessor{
         const kick = this.kicks[firingOrder[slot] - 1];
         kick.position = 0;
         kick.rate = 1 + this.rpm / 2400 + .24 * this.load;
-        kick.level = (.3 + .7 * this.load) * (t.cut ? .21 : 1) * limit;
+        kick.level = (.3 + .7 * this.load) * this.shiftGain * limit;
         this.lastSlot = slot;
       }
       this.bank[0] = this.bank[1] = 0;
