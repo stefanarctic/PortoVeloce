@@ -27,12 +27,13 @@ export class Car {
     this.gear=next;this.cut=this.shiftDuration;this.shiftCount++;return true;
   }
   step(dt,input,offroad=false){
+    const options=this.controls??{};
     const sin=Math.sin(this.heading),cos=Math.cos(this.heading);
     const u=this.vx*sin-this.vz*cos, v=this.vx*cos+this.vz*sin, absU=Math.abs(u);
     const lastU=this.forward;
     this.forward=u;
-    this.throttle+=(input.gas-this.throttle)*(1-Math.exp(-dt*10));
-    this.brake+=(input.brake-this.brake)*(1-Math.exp(-dt*20));
+    this.throttle+=(clamp(input.gas*(options.throttle??1),0,1)-this.throttle)*(1-Math.exp(-dt*10));
+    this.brake+=(clamp(input.brake*(options.braking??1),0,1)-this.brake)*(1-Math.exp(-dt*20));
     this.cut=Math.max(0,this.cut-dt);this.blip=Math.max(0,this.blip-dt);this.impact=Math.max(0,this.impact-2*dt);
     const ratio=this.gear<0?-2.93:ratios[this.gear];
     // While rolling against the selected gear, the slipping clutch transmits opposing torque.
@@ -67,9 +68,10 @@ export class Car {
     const frontLoad=mass*9.81*b/wheelbase,rearLoad=mass*9.81*a/wheelbase;
     // Keep full steering lock for tight city turns. Scale keyboard and stick lock to tire capacity at speed.
     const lateralLimit=9.81*grip;
-    const steerLimit=Math.min(.55,Math.atan(wheelbase*lateralLimit/Math.max(1,u*u))+.045);
-    const requestedSteer=input.turn*steerLimit;
-    const response=Math.abs(requestedSteer)<Math.abs(this.steer)?10:6.8;
+    const safeLimit=Math.min(.55,Math.atan(wheelbase*lateralLimit/Math.max(1,u*u))+.045);
+    const steerLimit=.55+(safeLimit-.55)*(options.speedAssist??1);
+    const requestedSteer=clamp(input.turn*steerLimit*(options.steering??1),-.55,.55);
+    const response=Math.abs(requestedSteer)<Math.abs(this.steer)?10*(options.steerReturn??1):6.8*(options.steerResponse??1);
     this.steer+=(requestedSteer-this.steer)*(1-Math.exp(-dt*response));
     const sign=u<0?-1:1;
     const fSlip=Math.atan2(v+a*this.yawRate,Math.max(2,absU))-this.steer*sign;
@@ -89,7 +91,7 @@ export class Car {
       const maxYaw=lateralLimit/Math.max(absU,3);
       const reference=clamp(u*Math.tan(this.steer)/(wheelbase+.0035*u*u),-maxYaw,maxYaw);
       const allowed=clamp(this.yawRate,Math.min(0,reference)-.025,Math.max(0,reference)+.025);
-      this.yawRate+=(allowed-this.yawRate)*dynamic*(1-Math.exp(-dt*4.8));
+      this.yawRate+=(allowed-this.yawRate)*dynamic*(1-Math.exp(-dt*4.8*(options.stability??1)));
     }
     this.heading+=this.yawRate*dt;
     this.vx+=(fx*sin+side*cos)/mass*dt;this.vz+=(-fx*cos+side*sin)/mass*dt;

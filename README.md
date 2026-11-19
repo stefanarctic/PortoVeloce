@@ -42,6 +42,19 @@ Validation: `node tests/region.test.mjs` checks track, pit and access clearance 
 
 ## Driving
 
+Open **Settings** from the main menu, the pause menu, or the small Settings button while driving. Opening it during a drive pauses the car and timers; Done returns you to the same session. All 35 preferences apply immediately and save locally. Reset a category or all settings without affecting personal bests.
+
+- **Audio:** master volume and mute, separate engine/exhaust, tires and wind levels, plus a two-second engine sound test.
+- **Driving:** transmission, steering sensitivity, steering response and return speed, high-speed steering assist, stability assist, throttle and brake sensitivity.
+- **Gamepad:** enable/disable, steering deadzone, response curve and inverted steering. Keyboard and gamepad button bindings remain as listed below.
+- **Camera:** chase/driver/bumper view, field of view, chase distance, height and follow speed, speed-based field of view and camera motion.
+- **Graphics:** render scale, shadow quality, brightness, view distance and fullscreen.
+- **Display:** metric/imperial units, HUD size, minimap zoom, and toggles for location, minimap, timers and keyboard hints.
+
+Lower steering sensitivity for gentler keyboard turns; increase steering response for quicker turn-in. Keeping the assists at their defaults preserves the original handling. Lower render scale or shadow quality to improve performance. Audio sliders respect the master mute switch.
+
+Run `node tests/settings.test.mjs` for preference validation, saved-setting round trips, handling controls, gamepad filtering and stereo audio checks.
+
 The car starts in first gear. Accelerate with W and upshift with X near the redline. Tap M for automatic shifts. Press N or B to select neutral or reverse at any speed. Neutral lets the car coast. If you select reverse while rolling forward, applying throttle slows the car and then backs it up.
 
 | Action | Keyboard | Standard Xbox-style gamepad |

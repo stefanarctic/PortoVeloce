@@ -23,7 +23,7 @@ class Exhaust extends AudioWorkletProcessor{
     this.delay=new Float32Array(Math.max(2,Math.round(sampleRate*.0048)));this.di=0;
     this.kicks=kickPitchHz.map(makeKick);
     this.lastSlot=-1;
-    this.shiftGain=1;
+    this.shiftGain=1;this.engineVolume=1;this.tireVolume=1;this.windVolume=1;
   }
   process(_,outputs){const channels=outputs[0];if(!channels.length)return true;
     const t=this.target, dt=1/sampleRate;if(t.cut&&!this.lastCut&&this.load>.35)this.bang=.52;this.lastCut=t.cut;
@@ -61,9 +61,10 @@ class Exhaust extends AudioWorkletProcessor{
       const wind=this.slow*Math.min(.13,t.speed*.0016), tire=t.slip*(Math.sin(this.phase*8.38)*.045+this.slow*.28);
       const mechanical=Math.sin(this.phase*Math.PI/3)*.026+Math.sin(this.phase*Math.PI)*.038;
       this.bang*=.9991;this.gain+=(t.volume-this.gain)*dt*12;
-      const common=(hp*1.05+resonance+mechanical*(.5+this.load)+wind+tire+(this.bang*.18+this.overrun)*noise)*this.gain*(.72+.65*this.rpm/8500);
-      channels[0][i]=Math.tanh(common+.045*(this.bank[0]-this.bank[1])*this.gain);
-      if(channels[1])channels[1][i]=Math.tanh(common+.045*(this.bank[1]-this.bank[0])*this.gain);
+      for(const key of ['engineVolume','tireVolume','windVolume'])this[key]+=((t[key]??1)-this[key])*dt*12;
+      const common=((hp*1.05+resonance+mechanical*(.5+this.load)+(this.bang*.18+this.overrun)*noise)*this.engineVolume+wind*this.windVolume+tire*this.tireVolume)*this.gain*(.72+.65*this.rpm/8500);
+      channels[0][i]=Math.tanh(common+.045*(this.bank[0]-this.bank[1])*this.gain*this.engineVolume);
+      if(channels[1])channels[1][i]=Math.tanh(common+.045*(this.bank[1]-this.bank[0])*this.gain*this.engineVolume);
     }return true;}
 }
 registerProcessor('v12-exhaust',Exhaust);
