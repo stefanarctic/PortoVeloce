@@ -2,12 +2,14 @@ import * as T from 'three';
 import {body,drift} from './collisions.js';
 import {buildHighway} from './highway.js';
 import {locate} from './highway-layout.js';
+import {townPaved} from './region-layout.js';
+import {buildTowns} from './towns.js';
 export const roadsX=[-540,-450,-360,-270,-180,-90,0],roadsZ=[-360,-270,-180,-90,0,90,180,270,360];
-export function offRoad(x,z){
+export function offRoad(x,z,y=0){
   if(x>=-553 && x<=26 && Math.abs(z)<=378){
     if(roadsX.some(v=>Math.abs(x-v)<=8.3)||roadsZ.some(v=>Math.abs(z-v)<=8.3))return false;
   }
-  return !locate(x,z)?.paved;
+  return !locate(x,z,y)?.paved&&!townPaved(x,z);
 }
 export const route=[[4,-81],[-4,-176],[-85,-185],[-176,-176],[-176,-85],[-176,4],[-85,4],[-5,4],[4,-45]];
 let seed=71292;function rand(){seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;}
@@ -20,9 +22,9 @@ export function createCity(scene,renderer){
    let by=batches.get(geo);if(!by)batches.set(geo,by=new Map());let bucket=by.get(m);if(!bucket)by.set(m,bucket=[]);
    tmp.position.set(x,y,z);tmp.rotation.set(rx,ry,rz);tmp.scale.set(w,h,d);tmp.updateMatrix();bucket.push([tmp.matrix.clone(),color]);}
  const block=(...args)=>place(cube,...args),pole=(...args)=>place(cylinder,...args);
- function solid(x,z,width,depth,yaw=0){
+ function solid(x,z,width,depth,yaw=0,minY=0,maxY=Infinity){
    const w=width/2,d=depth/2,cs=Math.cos(yaw),sn=Math.sin(yaw);
-   solids.push({x,z,w,d,cs,sn,bx:Math.abs(cs)*w+Math.abs(sn)*d,bz:Math.abs(sn)*w+Math.abs(cs)*d});
+   solids.push({x,z,w,d,cs,sn,minY,maxY,bx:Math.abs(cs)*w+Math.abs(sn)*d,bz:Math.abs(sn)*w+Math.abs(cs)*d});
  }
  const stone=mat(0xc3b7a4),trim=mat(0xe1d6c1),roof=mat(0x80766c),iron=mat(0x39454a,.48,.47),white=mat(0xd9d7c7),yellow=mat(0xc6a76a),wood=mat(0x977960),grass=mat(0x869062),bark=mat(0x685b46),leaf=mat(0xffffff),red=mat(0x9c4b36),blue=mat(0x425d68),dark=mat(0x394748),sail=mat(0xf4e8c7),warm=new T.MeshStandardMaterial({color:0xffe4b8,emissive:0xffb56a,emissiveIntensity:.6});
  const loader=new T.TextureLoader();let a=loader.load('assets/street.jpg'),n=loader.load('assets/street-n.jpg');
@@ -110,6 +112,7 @@ export function createCity(scene,renderer){
  }
  pole(stone,58,1.0,-303,14,4,14);for(let k=0;k<6;k++)pole(k%2?red:trim,58,4.4+2.4*k,-303,4.6-k*.32,2.45,4.6-k*.32);pole(warm,58,18.6,-303,2.9,2,2.9);pole(iron,58,19.85,-303,4.2,.45,4.2);
  buildHighway(scene,{block,pole,solid,place,paintTexture:texture});
+ buildTowns(scene,{block,pole,solid,building,pine,lamp,paintTexture:texture,materials:{stone,trim,roof,iron,white,yellow,wood,grass,red,blue,sidewalk,road:mat(0x626563)}});
  for(const [geo,by] of batches)for(const [m,items] of by){let inst=new T.InstancedMesh(geo,m,items.length);items.forEach(([mx,c],i)=>{inst.setMatrixAt(i,mx);if(c!==0xffffff)inst.setColorAt(i,col.setHex(c));});
    inst.castShadow=true;inst.receiveShadow=true;inst.computeBoundingSphere();scene.add(inst);}
  const grid=new Map();

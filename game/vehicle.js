@@ -1,6 +1,7 @@
 import * as T from 'three';
 import {body,drift} from './collisions.js';
 import {main as motorway,lane} from './highway-layout.js';
+import {towns} from './region-layout.js';
 import {GLTFLoader} from './vendor/GLTFLoader.js';
 export async function loadAventador(scene){
  const {scene:model}=await new GLTFLoader().loadAsync('assets/aventador.glb');
@@ -81,7 +82,7 @@ export async function loadAventador(scene){
  const axisY=new T.Vector3(0,1,0),axisZ=new T.Vector3(0,0,1),q=new T.Quaternion();
  return {root,pullPaddle(direction){
     const paddle=paddles[direction>0?1:0];paddle.time=0;
- },update(car,dt){animatePaddles(dt);deform(car.damage);dashboard(car);steering.quaternion.setFromAxisAngle(steeringAxis,-car.steer*12);root.position.set(car.x,.015,car.z);root.rotation.y=-car.heading;suspension.rotation.x=car.pitch;suspension.rotation.z=car.roll;
+ },update(car,dt){animatePaddles(dt);deform(car.damage);dashboard(car);steering.quaternion.setFromAxisAngle(steeringAxis,-car.steer*12);root.position.set(car.x,car.y+.015,car.z);root.rotation.y=-car.heading;suspension.rotation.x=car.pitch+car.roadPitch;suspension.rotation.z=car.roll;
     angle=(angle+car.forward*dt/.355)%(2*Math.PI);
     for(const [wheel,base,side]of rotors)wheel.quaternion.copy(base).multiply(q.setFromAxisAngle(axisZ,angle*side));
     for(const [hub,base]of hubs)hub.quaternion.copy(q.setFromAxisAngle(axisY,-car.steer)).multiply(base);
@@ -102,6 +103,15 @@ export function traffic(scene){
  const cars=Array.from({length:12},(_,i)=>{const p=paths[i%paths.length],seg=i%4,progress=((i*.271)%1)*.65+.1;
     return {p,seg,progress,x:0,z:0,yaw:0,speed:6+i%5,wait:0};});
  const parked=[];for(let j=-3;j<=3;j++){for(let k=0;k<3;k++){const z=j*90+24+k*8.2;parked.push({x:-6.7,z,yaw:Math.PI,parked:true},{x:-180+6.7,z:z-6,yaw:0,parked:true});}parked.push({x:-38,z:j*90+6.8,yaw:Math.PI/2,parked:true});}cars.push(...parked);
+ for(const town of towns){
+   for(let i=0;i<8;i++){
+     const left=town.xs[i%3],right=town.xs[3+i%3],top=town.zs[i%2],bottom=town.zs[4+i%2];
+     const p=[[left+4,top+4],[right-4,top+4],[right-4,bottom-4],[left+4,bottom-4]];
+     cars.push({p,seg:i%4,progress:.17+(i%3)*.27,x:0,z:0,yaw:0,speed:6+i%4,wait:0});
+   }
+   // Park on the service forecourt, clear of the fuel pumps and through lanes.
+   for(let i=0;i<9;i++)cars.push({x:-2155+i*6,z:town.z+52,yaw:0,parked:true});
+ }
  const circuit=motorway.length+740;
  for(let i=0;i<32;i++){const direction=i%2===0?1:-1,outer=i%4<2,targetSpeed=outer?22:29;
    cars.push({motorway:true,direction,outer,progress:(i+.37)*circuit/32,speed:targetSpeed,targetSpeed,x:0,z:0,yaw:0});}
@@ -125,7 +135,7 @@ export function traffic(scene){
      const forward=dx*fx+dz*fz,lateral=Math.abs(dx*fz-dz*fx);
      const inTown=c.progress>=motorway.length;
      let target=inTown?9:c.targetSpeed;
-     if(forward>0&&forward<45&&lateral<2.1)target=Math.min(target,Math.max(0,(forward-6)*.58+player.vx*fx+player.vz*fz));
+     if(Math.abs((player.y??0)-(c.y??0))<2&&forward>0&&forward<45&&lateral<2.1)target=Math.min(target,Math.max(0,(forward-6)*.58+player.vx*fx+player.vz*fz));
      // Opposing traffic occupies a separate carriageway. Both same-direction lanes meet on Lungomare.
      const narrows=inTown||c.progress<230||c.progress>motorway.length-230;
      for(const leader of highwayCars){

@@ -1,6 +1,6 @@
 // Ground-plane rigid bodies. Heading uses the same x/z rotation as Car.
 export function body(x,z,w,d,mass,heading=0){
-  return {x,z,w,d,mass,heading,vx:0,vz:0,yawRate:0,
+  return {x,z,y:0,w,d,mass,heading,vx:0,vz:0,yawRate:0,
     inertia:mass*(w*w+d*d)/3,damage:[0,0,0,0],integrity:1,impact:0};
 }
 
@@ -28,6 +28,8 @@ function damage(b,nx,nz,deltaSpeed){
 }
 
 export function collide(a,b){
+  const ay=a.y??0,by=b.mass?(b.y??0):(b.minY??0),top=b.mass?by+1.5:(b.maxY??Infinity);
+  if(ay+1.5<by||ay>top)return 0;
   if(Math.hypot(a.x-b.x,a.z-b.z)>Math.hypot(a.w,a.d)+Math.hypot(b.w,b.d))return 0;
   const sa=shape(a),sb=shape(b);
   let penetration=Infinity,nx=0,nz=0;

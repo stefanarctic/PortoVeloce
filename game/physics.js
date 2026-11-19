@@ -1,4 +1,5 @@
 import {collide} from './collisions.js';
+import {followRoadHeight} from './highway-layout.js';
 export const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
 export const ratios=[0,3.909,2.438,1.81,1.458,1.185,.967,.844];
 const finalDrive=3.43, radius=.355, mass=1690, torqueCurve=[[800,236],[2000,380],[3500,535],[5500,690],[7000,650],[8250,596],[8600,440]];
@@ -11,9 +12,9 @@ function torque(rpm){
 }
 export class Car {
   constructor(){this.mass=mass;this.w=.98;this.d=2.34;this.inertia=2650;this.auto=false;this.reset();}
-  reset(x=4,z=82,heading=0){
+  reset(x=4,z=82,heading=0,y=0){
     Object.assign(this,{x,z,heading,vx:0,vz:0,yawRate:0,steer:0,rpm:900,gear:1,cut:0,blip:0,integrity:1,damage:[0,0,0,0],throttle:0,brake:0,speed:0,forward:0,travel:0,slip:0,ax:0,ay:0,roll:0,pitch:0,impact:0,shiftCount:0,blocked:false});
-    this.crashed=false;this.shiftDuration=0;this.shiftStartRpm=900;this.engagement=1;
+    this.y=y;this.roadPitch=0;this.verticalSpeed=0;this.crashed=false;this.shiftDuration=0;this.shiftStartRpm=900;this.engagement=1;
   }
   shift(next){
     if(!Number.isInteger(next)||next===this.gear||next < -1||next>7)return false;
@@ -94,6 +95,7 @@ export class Car {
     this.vx+=(fx*sin+side*cos)/mass*dt;this.vz+=(-fx*cos+side*sin)/mass*dt;
     if(absU<.3&&Math.abs(v)<.3&&Math.abs(drive)<resistance){this.vx=this.vz=this.yawRate=0;}
     this.x+=this.vx*dt;this.z+=this.vz*dt;this.speed=Math.hypot(this.vx,this.vz);this.travel+=this.speed*dt;
+    followRoadHeight(this,dt);
     this.ax=clamp((u-lastU)/dt,-14,14);this.ay=side/mass;
     this.pitch+=(this.ax*.003-this.pitch)*(1-Math.exp(-dt*6));
     this.roll+=(this.ay*.004-this.roll)*(1-Math.exp(-dt*7));
