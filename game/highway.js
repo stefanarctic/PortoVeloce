@@ -1,5 +1,5 @@
 import * as T from 'three';
-import {main,link,entry,exit,townRamps,turnarounds,network,at,offset,profile,locate} from './highway-layout.js';
+import {main,link,entry,exit,townRamps,turnarounds,network,at,offset,profile,locate,circuitBounds,inCircuit} from './highway-layout.js';
 import {spanFrame,deckGeometry} from './road-geometry.js';
 import {towns,townAt} from './region-layout.js';
 
@@ -54,6 +54,7 @@ export function buildHighway(scene, api){
     return (side===r.direction&&departure>-20&&departure<150)||(side===-r.direction&&arrival>-150&&arrival<20);
   });
   for(const road of network){
+    if(road.kind)continue;
     const mainline=road===main, y=mainline?.002:road===link?.013:.023;
     const width=s=>mainline?profile(s).width:road.halfWidth;
     ribbon(road,s=>-width(s)-1.35,s=>width(s)+1.35,-.021,verge);
@@ -77,7 +78,7 @@ export function buildHighway(scene, api){
           const from=offset(p,side*(width(s)+.30)),to=offset(q,side*(width(e)+.30));
           if((road===entry||road===exit)&&((road===entry?mid:road.length-mid)<125))continue;
           if(townRamps.includes(road)&&dist<130)continue;
-          if(road===link&&dist<25)continue;
+          if(road===link&&(dist<25||Math.abs(p.x+850)<22||Math.abs(q.x+850)<22))continue;
           span(rail,from,to,.60,.18,.35,true);
           pole(steel,from.x,.34+from.y,from.z,.115,.69,.115);
           if(Math.floor(s/8)%3===0)block(side>0?white:amber,from.x,.83+from.y,from.z,.15,.13,.13);
@@ -160,6 +161,8 @@ export function buildHighway(scene, api){
   gantry(main,1160,-1,'Porto Nord','Lungomare');
   const west=main.points.find(p=>p.x<-1699.9&&p.z>385);
   gantry(main,west.s,-1,'Porto Veloce','Uscita Ovest / Centro',Math.PI/4);
+  gantry(link,220,1,'Autodromo Riviera','Svolta a sinistra / Track',-Math.PI/2);
+  gantry(link,390,-1,'Autodromo Riviera','Svolta a destra / Track',Math.PI/2);
   gantry(link,520,1,'A1 Nord','Bellacosta / Valdoro: inversione Nord');
   for(const r of turnarounds){
     gantry(main,r.startS-r.direction*140,r.direction,'U-TURN / Inversione','Cambio direzione   /   140 m',Math.PI/4);
@@ -201,6 +204,7 @@ export function buildHighway(scene, api){
   const stations=network.flatMap(r=>r.points.filter((_,i)=>i%4===0));
   function height(x,z){
     let dist=Math.hypot(Math.max(-568-x,0,x-25),Math.max(-397-z,0,z-397));
+    const b=circuitBounds;dist=Math.min(dist,Math.hypot(Math.max(b.left-35-x,0,x-b.right-35),Math.max(b.top-35-z,0,z-b.bottom-35)));
     for(const t of towns)dist=Math.min(dist,Math.hypot(Math.max(t.xs[0]-30-x,0,x-t.xs.at(-1)-30),Math.max(t.zs[0]-30-z,0,z-t.zs.at(-1)-30)));
     for(const p of stations){const dx=x-p.x;if(Math.abs(dx)>dist)continue;dist=Math.min(dist,Math.hypot(dx,z-p.z));}
     const fade=T.MathUtils.smoothstep(Math.min(dist,Math.max(0,26-x)*1.1),70,300);
@@ -213,7 +217,7 @@ export function buildHighway(scene, api){
   const card=new T.PlaneGeometry(1,1),leaf=new T.MeshBasicMaterial({map:tile('coastal-tree.png'),alphaTest:.48,side:T.DoubleSide,color:0xced0a6});
   for(let i=0;i<920;i++){
     const s=random()*main.length,p=at(main,s),side=random()<.5?-1:1,dist=19+Math.pow(random(),1.5)*198,q=offset(p,dist*side);
-    if(q.x>21||(q.x>-567&&q.z>-394&&q.z<394)||townAt(q.x,q.z,45)||stations.some(p=>Math.hypot(p.x-q.x,p.z-q.z)<26))continue;
+    if(inCircuit(q.x,q.z)||q.x>21||(q.x>-567&&q.z>-394&&q.z<394)||townAt(q.x,q.z,45)||stations.some(p=>Math.hypot(p.x-q.x,p.z-q.z)<26))continue;
     const treeHeight=5+random()*7,base=height(q.x,q.z);
     for(let f=0;f<2;f++)api.place(card,leaf,q.x,base+treeHeight*.43,q.z,treeHeight,treeHeight,1,0,f*Math.PI/2+s);
   }

@@ -7,7 +7,8 @@ T.TextureLoader.prototype.load=function(){return new T.Texture();};
 globalThis.document={createElement(){return {getContext(){return new Proxy({},{get:()=>()=>{}});}};}};
 const {createCity,offRoad}=await import('../game/city.js');
 const {towns,townStreets,townRecovery,townLots}=await import('../game/region-layout.js');
-const {townRamps,main,link,entry,exit,turnarounds,network,at,lane,locate,recovery,followRoadHeight}=await import('../game/highway-layout.js');
+const {townRamps,main,link,entry,exit,turnarounds,network,at,lane,locate,recovery,followRoadHeight,circuit,pitLane,circuitAccess,circuitRecovery,offset,circuitLapSample,circuitLapState,nearestOnRoad}=await import('../game/highway-layout.js');
+const {LapTimer}=await import('../game/lap-timer.js');
 const {Car}=await import('../game/physics.js');
 const {spanFrame}=await import('../game/road-geometry.js');
 const {body,collide}=await import('../game/collisions.js');
@@ -30,6 +31,14 @@ for(const road of townRamps){
 for(const road of [link,entry,exit,...turnarounds])for(let s=0;s<=road.length;s+=2){
   for(const d of road===link?[-1,1]:[1])clear(lane(road,s,d),road.id);
 }
+for(const road of [circuit,pitLane,circuitAccess])for(let s=0;s<=road.length;s+=2){
+  for(const side of road===circuit?[-5.5,0,5.5]:[0]){const p=at(road,s),q=offset(p,side);clear({...q,heading:Math.atan2(p.tx,-p.tz)},road.id);}
+  if(road===circuitAccess)for(const dir of [-1,1])clear(lane(road,s,dir),'Track access lane');
+}
+for(const [x,z] of [[-900,800],[-455,820],[-1200,1000]])clear(circuitRecovery(x,z),'Circuit recovery');
+const first=at(circuit,0),last=at(circuit,circuit.length);
+assert.ok(Math.hypot(first.x-last.x,first.z-last.z)<1e-6,'Circuit closes without a gap');
+assert.ok(first.tx*last.tx+first.tz*last.tz>.999,'Circuit seam is smooth');
 assert.ok(!network.some(r=>/Due Citta|Uscita Ponte/.test(r.id)),'Removed city-link roads must not remain in the network');
 assert.equal(offRoad(-1900,0),true,'Old city bridge must no longer be a drivable road');
 assert.equal(offRoad(-2030,0),true,'Old connecting avenue must be removed');
@@ -48,6 +57,41 @@ for(let yaw=-Math.PI;yaw<=Math.PI;yaw+=.2)for(const rise of [-.7,0,.7]){
 }
 scene.updateMatrixWorld(true);
 const ray=new T.Raycaster();
+// A complete lap on either curb stays valid, including both overlapping pit joins.
+for(const side of [-8.1,0,8.1,12,20]){
+  const timer=new LapTimer(circuit.length,circuit.startLine);
+  for(let travel=90;travel<circuit.length+110;travel+=1){
+    const p=offset(at(circuit,travel%circuit.length),side),sample=circuitLapSample(p.x,p.z);
+    assert.equal(sample.safe,true,'Curbs and runoff are legal');
+    timer.update(.02,sample.station,{safe:sample.safe});
+    assert.equal(timer.invalid,false,'Road overlap or curb must not invalidate a lap');
+  }
+  assert.equal(timer.count,1,'Curb/runoff lap must register');
+}
+for(let s=0;s<pitLane.length;s+=2){
+  const p=at(pitLane,s);assert.equal(circuitLapSample(p.x,p.z).safe,true,'Pit pavement is not grass');
+  ray.set(new T.Vector3(p.x,.1,p.z),new T.Vector3(0,-1,0));
+  const hits=ray.intersectObject(scene.getObjectByName('Circuit pavement'));
+  assert.ok(hits.length&&hits[0].point.y>.02,'Both pit joins must have continuous asphalt');
+  const overlap=nearestOnRoad(circuit,p.x,p.z);
+  if(overlap.distance<6.5){
+    assert.equal(hits.length,1,'No overlapping asphalt triangles at pit joins');
+    const paintHits=ray.intersectObjects(scene.children.filter(m=>m.name==='Circuit markings'));
+    assert.ok(paintHits.every(h=>h.point.y<.026),'No pit markings curling across the circuit');
+  }
+}
+{
+  const timer=new LapTimer(circuit.length,circuit.startLine);timer.update(.02,99);timer.update(.02,101);
+  const grass=offset(at(circuit,1100),26),sample=circuitLapSample(grass.x,grass.z);
+  assert.equal(sample.safe,false,'Grass beyond runoff is out');
+  const edge=at(circuit,1100),tire=offset(edge,21.7);assert.equal(circuitLapState({...tire,heading:Math.atan2(edge.tx,-edge.tz)}).safe,false,'A tire on grass invalidates before the car center leaves runoff');timer.update(.02,sample.station,{safe:sample.safe});assert.ok(timer.invalid);
+  // Even a stationary/light brush against the pit wall must invalidate the lap.
+  timer.reset();timer.update(.02,99);timer.update(.02,101);
+  const car=body(-493.9,850,.99,2.4,1600),x=car.x,z=car.z;
+  let impact=0;for(const wall of city.nearby(car.x,car.z))impact=Math.max(impact,collide(car,wall));
+  const contact=impact>0||Math.hypot(car.x-x,car.z-z)>1e-7;assert.ok(contact,'Fixture must touch pit wall');
+  timer.update(.02,102,{safe:true,wall:contact});assert.ok(timer.invalid,'Wall contact invalidates without requiring damage');
+}
 for(const road of turnarounds){
   const start=lane(main,road.startS,road.direction),finish=lane(main,road.endS,-road.direction);
   const first=lane(road,0),last=lane(road,road.length);
@@ -88,6 +132,21 @@ for(const road of turnarounds){
   }
   assert.equal(target,goals.length,road.id+': must complete U-turn');
   assert.equal(car.integrity,1,'Turnaround must not damage car');
+}
+// Drive a complete timed lap with the real physics and collision system.
+{
+  const car=new Car(),spawn=lane(circuit,50),timer=new LapTimer(circuit.length,circuit.startLine);car.auto=true;car.reset(spawn.x,spawn.z,spawn.heading);
+  const goals=[];for(let s=66;s<circuit.length;s+=16)goals.push(lane(circuit,s));for(let s=0;s<=130;s+=10)goals.push(lane(circuit,s));
+  let target=0;
+  for(let i=0;i<120*900&&target<goals.length;i++){
+    const p=goals[target];if(Math.hypot(p.x-car.x,p.z-car.z)<2){target++;continue;}
+    const desired=Math.atan2(p.x-car.x,-(p.z-car.z)),error=Math.atan2(Math.sin(desired-car.heading),Math.cos(desired-car.heading));
+    car.step(1/120,{gas:car.speed<8?.35:0,brake:car.speed>8.3?.4:0,turn:Math.max(-1,Math.min(1,error*2)),clutch:false,handbrake:false},offRoad(car.x,car.z));
+    const pRoad=circuitLapState(car);timer.update(1/120,pRoad.station,{safe:pRoad.safe});
+    for(const obstacle of city.nearby(car.x,car.z)){const x=car.x,z=car.z;collide(car,obstacle);assert.ok(Math.hypot(car.x-x,car.z-z)<.001,'Circuit driving collision');}
+    assert.equal(offRoad(car.x,car.z),false,'Circuit driving must stay paved');
+  }
+  assert.equal(target,goals.length,'Complete a physical circuit lap');assert.equal(timer.count,1,'Physical lap must register exactly once');assert.equal(car.integrity,1);
 }
 const upper=Object.assign(body(-1700,-1150,1,2.4,1600),{y:7}),lower=body(-1700,-1150,1,2.4,1600);
 collide(upper,lower);assert.equal(upper.x,-1700);assert.equal(upper.z,-1150);assert.equal(lower.x,-1700);

@@ -30,6 +30,16 @@ The stations and bus shelters are scenery; public transport and pedestrian simul
 
 Run `node tests/region.test.mjs` to validate paved surfaces, vehicle clearance, town recovery, traffic spawn positions and scene geometry without a graphics driver. Verified with Node 25.
 
+## Autodromo Riviera
+
+Choose **Track day → Enter Autodromo Riviera** for the starting grid, or drive there via **A1 / Porto Ovest** and follow the Autodromo signs on the west connector. Free drive also includes a circuit starting location. The region map and minimap show the circuit in coral.
+
+The 2.97 km, 15 m wide circuit has a 420 m main straight, sweeping corners, an S-section, red/white kerbs, runoff, barriers, braking boards, a covered grandstand, timing tower and garage paddock. A separate pit lane joins the track at both ends; the paddock connects to the public access road. The pit speed sign is advisory; pit servicing and race opponents are not implemented.
+
+Cross the chequered line in the forward direction to start an unlimited hotlap session. The HUD shows current, last and locally saved best lap times. Complete all three intermediate checkpoints in order. Red/white curbs, painted runoff, gravel and pit pavement are legal surfaces. Touching grass with a tire or contacting a wall invalidates the attempt. Pit travel does not award circuit checkpoints; reverse driving, teleporting and recovery cannot produce a valid lap. Cross the start line again to begin a fresh lap. Pausing or opening the map freezes timing. **R** recovers the car to a nearby circuit, pit or access lane.
+
+Validation: `node tests/region.test.mjs` checks track, pit and access clearance and drives a complete timed lap through the actual physics simulation. `node tests/lap-timer.test.mjs` checks valid laps and shortcut/reverse/recovery rejection.
+
 ## Driving
 
 The car starts in first gear. Accelerate with W and upshift with X near the redline. Tap M for automatic shifts. Press N or B to select neutral or reverse at any speed. Neutral lets the car coast. If you select reverse while rolling forward, applying throttle slows the car and then backs it up.

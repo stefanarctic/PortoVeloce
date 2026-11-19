@@ -1,7 +1,8 @@
 import * as T from 'three';
 import {body,drift} from './collisions.js';
 import {buildHighway} from './highway.js';
-import {locate} from './highway-layout.js';
+import {buildCircuit} from './circuit.js';
+import {locate,paddockPaved} from './highway-layout.js';
 import {townPaved} from './region-layout.js';
 import {buildTowns} from './towns.js';
 export const roadsX=[-540,-450,-360,-270,-180,-90,0],roadsZ=[-360,-270,-180,-90,0,90,180,270,360];
@@ -9,7 +10,7 @@ export function offRoad(x,z,y=0){
   if(x>=-553 && x<=26 && Math.abs(z)<=378){
     if(roadsX.some(v=>Math.abs(x-v)<=8.3)||roadsZ.some(v=>Math.abs(z-v)<=8.3))return false;
   }
-  return !locate(x,z,y)?.paved&&!townPaved(x,z);
+  return !locate(x,z,y)?.paved&&!townPaved(x,z)&&!paddockPaved(x,z);
 }
 export const route=[[4,-81],[-4,-176],[-85,-185],[-176,-176],[-176,-85],[-176,4],[-85,4],[-5,4],[4,-45]];
 let seed=71292;function rand(){seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;}
@@ -111,6 +112,7 @@ export function createCity(scene,renderer){
      for(let side of [-1,1]){let bz=z+side*(4+rand());place(hullGeo,white,x,-.36,bz,3.2,1.45,9.2);block(wood,x,.10,bz,2.15,.3,5.7);block(trim,x,.55,bz,1.6,.8,2.7);pole(iron,x,4.8,bz,.09,9.4,.09);if((j+k)%2===0)place(tri,sail,x,.55,bz,.9,.92,.99,0,.12*k);}}
  }
  pole(stone,58,1.0,-303,14,4,14);for(let k=0;k<6;k++)pole(k%2?red:trim,58,4.4+2.4*k,-303,4.6-k*.32,2.45,4.6-k*.32);pole(warm,58,18.6,-303,2.9,2,2.9);pole(iron,58,19.85,-303,4.2,.45,4.2);
+ buildCircuit(scene,{block,pole,solid,place,paintTexture:texture});
  buildHighway(scene,{block,pole,solid,place,paintTexture:texture});
  buildTowns(scene,{block,pole,solid,building,pine,lamp,paintTexture:texture,materials:{stone,trim,roof,iron,white,yellow,wood,grass,red,blue,sidewalk,road:mat(0x626563)}});
  for(const [geo,by] of batches)for(const [m,items] of by){let inst=new T.InstancedMesh(geo,m,items.length);items.forEach(([mx,c],i)=>{inst.setMatrixAt(i,mx);if(c!==0xffffff)inst.setColorAt(i,col.setHex(c));});

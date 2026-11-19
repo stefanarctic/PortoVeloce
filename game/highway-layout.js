@@ -75,7 +75,69 @@ export const turnarounds=[
     [[-1340,1250],[-1400,1110]]
   ])
 ];
-export const network=[main,link,entry,exit,...townRamps,...turnarounds];
+export const circuit=road('Autodromo Riviera',[
+  [[-520,1000],[-520,860],[-520,720],[-520,580]],
+  [[-520,580],[-520,480],[-580,430],[-680,430]],
+  [[-680,430],[-820,430],[-970,430],[-1110,430]],
+  [[-1110,430],[-1260,430],[-1330,500],[-1330,620]],
+  [[-1330,620],[-1330,730],[-1160,710],[-1160,800]],
+  [[-1160,800],[-1160,885],[-1270,890],[-1270,970]],
+  [[-1270,970],[-1270,1100],[-1220,1180],[-1090,1180]],
+  [[-1090,1180],[-970,1180],[-930,1080],[-850,1080]],
+  [[-850,1080],[-760,1080],[-770,1180],[-680,1180]],
+  [[-680,1180],[-570,1180],[-520,1120],[-520,1000]]
+],7.5);
+Object.assign(circuit,{kind:'circuit',oneWay:true,surfaceMargin:1.2,startLine:100});
+const pitStart=at(circuit,circuit.length-70),pitFinish=at(circuit,400);
+export const pitLane=road('Pit lane',[
+  [[pitStart.x,pitStart.z],[pitStart.x+pitStart.tx*45,pitStart.z+pitStart.tz*45],[-475,1050],[-475,990]],
+  [[-475,990],[-475,880],[-475,760],[-475,650]],
+  [[-475,650],[-475,600],[pitFinish.x-pitFinish.tx*50,pitFinish.z-pitFinish.tz*50],[pitFinish.x,pitFinish.z]]
+],4.5);
+Object.assign(pitLane,{kind:'pit',oneWay:true});
+export const circuitAccess=road('Autodromo access',[
+  [[-850,0],[-850,100],[-850,220],[-850,300]],
+  [[-850,300],[-850,365],[-720,385],[-650,385]],
+  [[-650,385],[-490,385],[-370,385],[-370,510]],
+  [[-370,510],[-370,620],[-370,720],[-370,770]],
+  [[-370,770],[-370,815],[-425,820],[-475,820]]
+],7);
+circuitAccess.kind='access';
+export const circuitBounds={left:-1410,right:-340,top:390,bottom:1250};
+export function inCircuit(x,z){return x>circuitBounds.left&&x<circuitBounds.right&&z>circuitBounds.top&&z<circuitBounds.bottom;}
+export function paddockPaved(x,z){return x>=-480&&x<=-451&&z>=690&&z<=970;}
+export function nearestOnRoad(road,x,z){
+  let best=null;
+  for(let i=1;i<road.points.length;i++){
+    const a=road.points[i-1],b=road.points[i],dx=b.x-a.x,dz=b.z-a.z;
+    const t=clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz),0,1),px=a.x+t*dx,pz=a.z+t*dz,distance=Math.hypot(x-px,z-pz);
+    if(!best||distance<best.distance)best={road,s:a.s+t*(b.s-a.s),distance,x:px,z:pz};
+  }return best;
+}
+// Lap eligibility must not depend on which overlapping road wins locate().
+// The painted runoff and gravel are legal; only the grass beyond them is out.
+export function circuitLapSample(x,z,y=0){
+  const p=nearestOnRoad(circuit,x,z);
+  if(Math.abs(y)>.6)return {station:null,safe:false};
+  if(p.distance<=22.08)return {station:p.s,safe:true};
+  const paved=paddockPaved(x,z)||[pitLane,circuitAccess].some(r=>nearestOnRoad(r,x,z).distance<=r.halfWidth+.08);
+  return {station:null,safe:paved};
+}
+export function circuitLapState(car){
+  const sample=circuitLapSample(car.x,car.z,car.y),sn=Math.sin(car.heading),cs=Math.cos(car.heading);
+  // Match the physics wheelbase and check tire contact rather than body overhang.
+  for(const side of [-.9,.9])for(const axle of [-1.15,1.55]){
+    if(!circuitLapSample(car.x+cs*side+sn*axle,car.z+sn*side-cs*axle,car.y).safe)sample.safe=false;
+  }
+  return sample;
+}
+export function circuitRecovery(x,z){
+  if(!inCircuit(x,z))return null;
+  const p=nearestOnRoad(circuit,x,z),pit=nearestOnRoad(pitLane,x,z),access=nearestOnRoad(circuitAccess,x,z);
+  const nearest=[p,pit,access].reduce((a,b)=>a.distance<b.distance?a:b);
+  return lane(nearest.road,nearest.s);
+}
+export const network=[main,link,entry,exit,...townRamps,...turnarounds,circuit,pitLane,circuitAccess];
 export function offset(p,side){return {x:p.x-p.tz*side,z:p.z+p.tx*side,y:p.y??0};}
 export function at(road,s){
   const pts=road.points;s=clamp(s,0,road.length);
@@ -102,7 +164,7 @@ export function locate(x,z,y=0){
     const dx=b.x-a.x,dz=b.z-a.z,t=clamp(((x-a.x)*dx+(z-a.z)*dz)/(dx*dx+dz*dz),0,1);
     const px=a.x+t*dx,pz=a.z+t*dz,dist=Math.hypot(x-px,z-pz);
 
-    const s=a.s+(b.s-a.s)*t,width=road===main?profile(s).width:road.halfWidth;
+    const s=a.s+(b.s-a.s)*t,width=road===main?profile(s).width:road.halfWidth+(road.surfaceMargin??0);
     const elevation=road.height?.(s)??0;
     if(Math.abs(elevation-y)>1.8)continue;
     // At merges a point inside either paved strip must keep its road grip.
@@ -116,7 +178,7 @@ export function locate(x,z,y=0){
 export function lane(road,s,direction=1,outer=true){
   const p=at(road,s);
   let side=0;if(road===main){const {blend}=profile(s);side=direction*(4+(outer?4.55:-.92)*blend);}
-  else if(road===link)side=direction*4;
+  else if(road===link||road===circuitAccess)side=direction*(road===link?4:3.5);
   const q=offset(p,side);return {...q,heading:Math.atan2(direction*p.tx,-direction*p.tz)};
 }
 export function recovery(x,z,y=0){
